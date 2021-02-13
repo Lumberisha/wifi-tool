@@ -1,80 +1,104 @@
-import re
-import threading
 import subprocess
-
-import tkinter as tk
-
-window = tk.Tk()
-
-
-def start():
-    command1 = "netsh wlan show profile"
-    network = subprocess.run(command1, shell=True, capture_output=True, text=True)
-    net_op = network.stdout
-
-    pw_list = []
-
-    pattern = re.compile(r"(Profile\s*:\s)(.*)")
-    matches = pattern.finditer(net_op)
-    for match in matches:
-
-        net_name = match.group(2)
-        command2 = "netsh wlan show profile " + '"' + net_name + '"' + " key=clear"
-        net_info = subprocess.run(command2, shell=True, capture_output=True, text=True)
-
-        pattern2 = re.compile(r"(SSID name\s*:\s)(.*)")
-        wlan_name = pattern2.finditer(net_info.stdout)
-        pass_pattern = re.compile(r"(Key Content\s*:\s)(.*)")
-        pass_match = pass_pattern.finditer(net_info.stdout)
-
-        for wname, passwd in zip(wlan_name, pass_match):
-            pw_list.append(passwd.group(2))
-
-    def checker(input):
-        pattern = "!@#$%^&*()-+?_=,<>/"
-
-        lc = any(map(str.islower, input))
-        uc = any(map(str.isupper, input))
-        num = any(map(str.isdigit, input))
-        spec = any(c in pattern for c in input)
-        length = len(input) > 7
-
-        if lc and uc and num and spec and length:
-            greeting = tk.Label(text=input + " > EXPERT")
-            greeting.pack()
-
-        elif length and lc and num and spec:
-            greeting = tk.Label(text=input + " > HARD")
-            greeting.pack()
-
-        elif length and uc and num and spec:
-            greeting = tk.Label(text=input + " > HARD")
-            greeting.pack()
-
-        elif length and lc and uc and num:
-            greeting = tk.Label(text=input + " > MEDIUM")
-            greeting.pack()
-
-        elif length and lc and num:
-            greeting = tk.Label(text=input + " > MEDIUM")
-            greeting.pack()
-
-        elif length or num or lc or uc:
-            greeting = tk.Label(text=input + " > EASY")
-            greeting.pack()
-
-    for pw in pw_list:
-        checker(pw)
+import re
+import numpy as np
+import matplotlib.pyplot as plt
 
 
-startButton = tk.Button(
-    window, text="START", command=threading.Thread(target=start).start()
-)
+def calculate_strength_points(password):
+    pattern = re.compile("[@_!#$%^&.,*()<>?/\|}{~:]")
+    password_strength = 0
+    lc = any(map(str.islower, password))
+    upc = any(map(str.isupper, password))
+    num = any(map(str.isdigit, password))
+    spec = any(c in "[@_!#$%^&.,*()<>?/\|}{~:]" for c in password)
 
-startButton.pack()
+    if lc and upc and num and spec:
+        password_strength += 50
+        for x in password:
+            if x.isdigit():
+                password_strength += 1
+            elif x.islower():
+                password_strength += 2
+            elif x.isupper():
+                password_strength += 2
+            elif pattern.search(password):
+                password_strength += 4
+
+    elif (num and lc and upc) or (num and lc and spec) or (num and upc and spec) or (lc and upc and spec):
+        password_strength += 30
+        for x in password:
+            if x.isdigit():
+                password_strength += 1
+            elif x.islower():
+                password_strength += 2
+            elif x.isupper():
+                password_strength += 2
+            elif pattern.search(password):
+                password_strength += 4
+    elif (num and lc) or (num and upc) or (num and spec) or (lc and upc) or (lc and spec) or (upc and spec):
+        password_strength += 20
+        for x in password:
+            if x.isdigit():
+                password_strength += 1
+            elif x.islower():
+                password_strength += 2
+            elif x.isupper():
+                password_strength += 2
+            elif pattern.search(password):
+                password_strength += 4
+    elif num or lc or upc:
+        password_strength += 10
+        for x in password:
+            if x.isdigit():
+                password_strength += 1
+            elif x.islower():
+                password_strength += 2
+            elif x.isupper():
+                password_strength += 2
+            elif pattern.search(password):
+                password_strength += 4
+    return password_strength
 
 
-window.geometry("400x400")
+command_output = subprocess.run(["netsh", "wlan", "show", "profiles"], capture_output=True).stdout.decode()
 
+profile_names = (re.findall("All User Profile     : (.*)\r", command_output))
 
-window.mainloop()
+wifi_list = list()
+password_list = list()
+password_strength_list = list()
+
+if len(profile_names) != 0:
+    for name in profile_names:
+        wifi_profile = dict()
+        profile_info = subprocess.run(["netsh", "wlan", "show", "profile", name], capture_output=True).stdout.decode()
+        if re.search("Security key           : Absent", profile_info):
+            continue
+        else:
+            wifi_profile["WiFi"] = name
+            profile_info_pass = subprocess.run(["netsh", "wlan", "show", "profile", name, "key=clear"],
+                                               capture_output=True).stdout.decode()
+            password = re.search("Key Content            : (.*)\r", profile_info_pass)
+            if password == None:
+                wifi_profile["Password"] = None
+            else:
+                wifi_profile["Password"] = password[1]
+                wifi_profile["Strength"] = calculate_strength_points(password[1])
+            wifi_list.append(wifi_profile)
+            password_list.append(password[1])
+            password_strength_list.append(calculate_strength_points(password[1]))
+
+for x in range(len(wifi_list)):
+    print(wifi_list[x])
+
+objects = tuple(password_list)
+y_pos = np.arange(len(objects))
+
+plt.bar(y_pos, password_strength_list)
+plt.xticks(y_pos, objects, rotation=90)
+plt.subplots_adjust(bottom=0.4)
+plt.subplots_adjust(top=0.8)
+
+plt.ylabel('Kompleksiteti')
+
+plt.show()
